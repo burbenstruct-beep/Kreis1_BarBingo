@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kreis 1 Bar Crawl Zürich</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Leaflet CSS & JS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
+    
+    <style>
+        /* Custom scrollbar & Map styles */
+        #map {
+            height: calc(100vh - 80px);
+            z-index: 1;
+        }
+        @media (max-width: 768px) {
+            #map {
+                height: 50vh;
+            }
+        }
+        /* Custom map pin styling */
+        .custom-pin {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            color: white;
+            font-weight: bold;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+            transition: all 0.2s ease;
+        }
+        .custom-pin-unvisited {
+            background-color: #ef4444; /* Red */
+            border: 2px solid #ffffff;
+        }
+        .custom-pin-visited {
+            background-color: #10b981; /* Green */
+            border: 2px solid #ffffff;
+        }
+        .custom-pin-selected {
+            transform: scale(1.3);
+            border: 3px solid #f59e0b; /* Amber glow */
+            z-index: 1000 !important;
+        }
+    </style>
+</head>
+<body class="bg-slate-900 text-slate-100 font-sans flex flex-col h-screen overflow-hidden">
+
+    <!-- Header -->
+    <header class="bg-slate-800 border-b border-slate-700 px-4 py-3 flex items-center justify-between shadow-md z-10 shrink-0">
+        <div class="flex items-center space-x-3">
+            <div class="bg-amber-500 text-slate-900 p-2 rounded-xl flex items-center justify-center">
+                <i class="fa-solid font-bold fa-martini-glass-citrus text-xl"></i>
+            </div>
+            <div>
+                <h1 class="font-bold text-lg leading-tight">Kreis 1 Bar Crawl</h1>
+                <p class="text-xs text-slate-400">Zürich Altstadt Explorer</p>
+            </div>
+        </div>
+
+        <!-- Random Bar Button -->
+        <button id="random-btn" class="bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 font-bold px-4 py-2 rounded-xl text-sm flex items-center shadow-lg transition active:scale-95">
+            <i class="fa-solid fa-dice mr-2 text-base"></i>
+            <span>Nächste Bar vorschlagen</span>
+        </button>
+    </header>
+
+    <!-- Main Content Container -->
+    <div class="flex-1 flex flex-col md:flex-row overflow-hidden relative">
+
+        <!-- Sidebar / List Panel -->
+        <aside class="w-full md:w-80 lg:w-96 bg-slate-800/90 backdrop-blur border-r border-slate-700 flex flex-col order-2 md:order-1 h-1/2 md:h-full z-10 shadow-xl">
+            
+            <!-- Progress Section -->
+            <div class="p-4 border-b border-slate-700 bg-slate-800">
+                <div class="flex justify-between items-center mb-2">
+                    <span class="text-sm font-medium text-slate-300">Fortschritt im Kreis 1</span>
+                    <span id="progress-text" class="text-sm font-bold text-amber-400">0 / 0 (0%)</span>
+                </div>
+                <div class="w-full bg-slate-700 rounded-full h-3 overflow-hidden p-0.5 border border-slate-600">
+                    <div id="progress-bar" class="bg-gradient-to-r from-amber-500 to-emerald-500 h-full rounded-full transition-all duration-500 w-0"></div>
+                </div>
+            </div>
+
+            <!-- Filter Tabs -->
+            <div class="flex border-b border-slate-700 text-sm font-medium">
+                <button id="filter-all" class="flex-1 py-2.5 text-center border-b-2 border-amber-500 text-amber-400 transition">Alle</button>
+                <button id="filter-visited" class="flex-1 py-2.5 text-center border-b-2 border-transparent text-slate-400 hover:text-slate-200 transition">Besucht</button>
+                <button id="filter-unvisited" class="flex-1 py-2.5 text-center border-b-2 border-transparent text-slate-400 hover:text-slate-200 transition">Offen</button>
+            </div>
+
+            <!-- Bar List -->
+            <div id="bar-list" class="flex-1 overflow-y-auto divide-y divide-slate-700/50 p-2 space-y-1">
+                <!-- Bar item cards will be dynamically rendered here -->
+            </div>
+        </aside>
+
+        <!-- Map Container -->
+        <main class="flex-1 relative order-1 md:order-2 h-1/2 md:h-full">
+            <div id="map" class="w-full h-full bg-slate-950"></div>
+        </main>
+    </div>
+
+    <!-- Random Bar Modal -->
+    <div id="random-modal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-slate-800 border border-slate-700 rounded-2xl p-6 max-w-sm w-full shadow-2xl text-center transform transition-all scale-95 opacity-0" id="modal-card">
+            <div class="w-16 h-16 bg-amber-500/10 text-amber-500 rounded-full flex items-center justify-center mx-auto mb-4 border border-amber-500/20">
+                <i class="fa-solid fa-glass-cheers text-3xl"></i>
+            </div>
+            <h3 class="text-xs uppercase tracking-wider text-amber-400 font-semibold mb-1">Nächster Stopp Vorschlag</h3>
+            <h2 id="modal-bar-name" class="text-xl font-bold text-slate-100 mb-2">Bar Name</h2>
+            <p id="modal-bar-desc" class="text-sm text-slate-400 mb-6">Beschreibung / Adresse der Bar...</p>
+            
+            <div class="flex space-x-3">
+                <button id="modal-close-btn" class="flex-1 bg-slate-700 hover:bg-slate-600 text-slate-200 font-medium py-2.5 px-4 rounded-xl text-sm transition">
+                    Schliessen
+                </button>
+                <button id="modal-select-btn" class="flex-1 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold py-2.5 px-4 rounded-xl text-sm transition">
+                    Auf Karte zeigen
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Sample list of popular bars in Kreis 1 (Altstadt), Zürich
+        const barsData = [
+            { id: 1, name: "Widder Bar", address: "Rennweg 7", lat: 47.3725, lng: 8.5392, category: "Cocktail Bar", desc: "Exquisite Cocktails und riesige Whisky-Auswahl." },
+            { id: 2, name: "Tales Bar", address: "Selnaustrasse 29", lat: 47.3708, lng: 8.5332, category: "Cocktail Bar", desc: "Gemütliche Bar mit meisterhaften Eigenkreationen." },
+            { id: 3, name: "Bar am Wasser", address: "Stadthausquai 1", lat: 47.3676, lng: 8.5416, category: "High-End Bar", desc: "Zweistöckige Premium-Bar direkt an der Limmat." },
+            { id: 4, name: "Old Fashion Bar", address: "Fraumünsterstrasse 15", lat: 47.3698, lng: 8.5401, category: "Klassiker", desc: "Die älteste Bar Zürichs mit schönem Innenhof." },
+            { id: 5, name: "Bar Münster", address: "Münstergasse 30", lat: 47.3705, lng: 8.5448, category: "Cocktail & Lounge", desc: "Klassischer Style im Herzen der Altstadt." },
+            { id: 6, name: "Jules Verne Panorama Bar", address: "Uraniastrasse 9", lat: 47.3742, lng: 8.5398, category: "Rooftop", desc: "Spektakuläre Aussicht über die Dächer von Zürich." },
+            { id: 7, name: "Kronenhalle Bar", address: "Rämistrasse 4", lat: 47.3675, lng: 8.5463, category: "Legendär", desc: "Berühmt für Kunstwerke an den Wänden & weltklasse Drinks." },
+            { id: 8, name: "Rimini Bar", address: "Badweg 10", lat: 47.3705, lng: 8.5342, category: "Outdoor / Flussbad", desc: "Männerbad am Tag, entspannte Open-Air Bar am Abend." },
+            { id: 9, name: "El Dorado", address: "Limmatquai 118", lat: 47.3749, lng: 8.5435, category: "Bierbar", desc: "Grosse Auswahl an Craft Bieren aus aller Welt." },
+            { id: 10, name: "Cabaret Voltaire", address: "Spiegelgasse 1", lat: 47.3716, lng: 8.5442, category: "Kultur & Bar", desc: "Geburtsort des Dadaismus mit inspirierender Bar." },
+            { id: 11, name: "George Bar & Grill", address: "Sihlstrasse 50", lat: 47.3738, lng: 8.5350, category: "Penthouse Bar", desc: "Eleganter Penthouse-Chic oberhalb der Dächer." },
+            { id: 12, name: "Cranberry Bar", address: "Metzgergasse 3", lat: 47.3721, lng: 8.5441, category: "Cocktail Bar", desc: "Beliebter Treffpunkt mit tollen Cocktail-Kreationen." },
+            { id: 13, name: "Pickwick Pub", address: "Theaterstrasse 10", lat: 47.3672, lng: 8.5468, category: "Pub", desc: "Klassischer Englischer Pub mit Sportübertragungen." },
+            { id: 14, name: "Bar Fussbar", address: "Stadthausquai 12", lat: 47.3691, lng: 8.5422, category: "Sommerbar", desc: "Frauenbad am Tag, Bar auf der Limmat bei Nacht." },
+            { id: 15, name: "Baltho Bar", address: "Marktgasse 17", lat: 47.3728, lng: 8.5438, category: "Modern Bar", desc: "Kreative Drinks im Niederdorf." }
+        ];
+
+        // State variables
+        let visitedBars = JSON.parse(localStorage.getItem('visited_bars_kreis1')) || {}; // Format: { barId: "YYYY-MM-DD" }
+        let currentFilter = 'all';
+        let map;
+        let markers = {};
+        let selectedRandomBarId = null;
+
+        // Initialize App
+        window.onload = function() {
+            initMap();
+            renderBarList();
+            updateProgress();
+            setupEventListeners();
+        };
+
+        // Initialize OpenStreetMap with Leaflet
+        function initMap() {
+            // Center map on Kreis 1, Zurich (approx: 47.371, 8.541)
+            map = L.map('map', {
+                zoomControl: false
+            }).setView([47.371, 8.541], 15);
+
+            // Add Zoom Control to Top Right
+            L.control.zoom({ position: 'topright' }).addTo(map);
+
+            // OpenStreetMap dark mode tiles (CartoDB Dark Matter)
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+                subdomains: 'abcd',
+                maxZoom: 19
+            }).addTo(map);
+
+            // Add Markers
+            barsData.forEach(bar => {
+                const isVisited = !!visitedBars[bar.id];
+                const marker = createCustomMarker(bar, isVisited);
+                marker.addTo(map);
+                markers[bar.id] = marker;
+            });
+        }
+
+        // Helper to create Leaflet Custom DivIcon Markers
+        function createCustomMarker(bar, isVisited) {
+            const iconClass = isVisited ? 'custom-pin-visited' : 'custom-pin-unvisited';
+            
+            const customIcon = L.divIcon({
+                className: '',
+                html: `<div id="pin-${bar.id}" class="custom-pin ${iconClass} w-8 h-8 rounded-full shadow-lg cursor-pointer">
+                        <i class="fa-solid ${isVisited ? 'fa-check' : 'fa-martini-glass'} text-xs"></i>
+                       </div>`,
+                iconSize: [32, 32],
+                iconAnchor: [16, 16]
+            });
+
+            const marker = L.marker([bar.lat, bar.lng], { icon: customIcon });
+
+            // Popup content
+            marker.bindPopup(() => getPopupContent(bar), {
+                className: 'custom-leaflet-popup'
+            });
+
+            marker.on('click', () => {
+                highlightListItem(bar.id);
+            });
+
+            return marker;
+        }
+
+        // Generate HTML content for map popup
+        function getPopupContent(bar) {
+            const isVisited = !!visitedBars[bar.id];
+            const visitDate = visitedBars[bar.id] ? new Date(visitedBars[bar.id]).toLocaleDateString('de-CH') : '';
+
+            return `
+                <div class="p-3 max-w-xs text-slate-900">
+                    <div class="text-xs font-semibold text-amber-600 uppercase tracking-wide">${bar.category}</div>
+                    <h4 class="font-bold text-base mb-1">${bar.name}</h4>
+                    <p class="text-xs text-slate-600 mb-2"><i class="fa-solid fa-location-dot mr-1"></i>${bar.address}</p>
+                    <p class="text-xs text-slate-500 mb-3">${bar.desc}</p>
+                    
+                    ${isVisited ? `
+                        <div class="bg-emerald-100 text-emerald-800 text-xs px-2.5 py-1.5 rounded-lg mb-2 flex items-center font-medium">
+                            <i class="fa-solid fa-calendar-check mr-2"></i>Besucht am ${visitDate}
+                        </div>
+                    ` : ''}
+
+                    <button onclick="toggleVisitStatus(${bar.id})" class="w-full py-1.5 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center ${
+                        isVisited 
+                        ? 'bg-slate-200 hover:bg-slate-300 text-slate-700' 
+                        : 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-md'
+                    }">
+                        <i class="fa-solid ${isVisited ? 'fa-rotate-left mr-1.5' : 'fa-check mr-1.5'}"></i>
+                        ${isVisited ? 'Als nicht besucht markieren' : 'Als besucht markieren'}
+                    </button>
+                </div>
+            `;
+        }
+
+        // Toggle bar visited status
+        window.toggleVisitStatus = function(barId) {
+            if (visitedBars[barId]) {
+                delete visitedBars[barId];
+            } else {
+                // Save current date in ISO format YYYY-MM-DD
+                const today = new Date().toISOString().split('T')[0];
+                visitedBars[barId] = today;
+            }
+
+            // Save to LocalStorage
+            localStorage.setItem('visited_bars_kreis1', JSON.stringify(visitedBars));
+
+            // Update UI components
+            updateMarkerIcon(barId);
+            renderBarList();
+            updateProgress();
+
+            // Refresh open popup if available
+            if (markers[barId].isPopupOpen()) {
+                markers[barId].setPopupContent(getPopupContent(barsData.find(b => b.id === barId)));
+            }
+        };
+
+        // Update single marker visual state
+        function updateMarkerIcon(barId) {
+            const bar = barsData.find(b => b.id === barId);
+            const isVisited = !!visitedBars[barId];
+            const pinElement = document.getElementById(`pin-${barId}`);
+
+            if (pinElement) {
+                if (isVisited) {
+                    pinElement.classList.remove('custom-pin-unvisited');
+                    pinElement.classList.add('custom-pin-visited');
+                    pinElement.innerHTML = `<i class="fa-solid fa-check text-xs"></i>`;
+                } else {
+                    pinElement.classList.remove('custom-pin-visited');
+                    pinElement.classList.add('custom-pin-unvisited');
+                    pinElement.innerHTML = `<i class="fa-solid fa-martini-glass text-xs"></i>`;
+                }
+            }
+        }
+
+        // Update Progress bar & text counter
+        function updateProgress() {
+            const total = barsData.length;
+            const visitedCount = Object.keys(visitedBars).length;
+            const percentage = Math.round((visitedCount / total) * 100);
+
+            document.getElementById('progress-text').innerText = `${visitedCount} / ${total} (${percentage}%)`;
+            document.getElementById('progress-bar').style.width = `${percentage}%`;
+        }
+
+        // Render bar list in sidebar
+        function renderBarList() {
+            const listContainer = document.getElementById('bar-list');
+            listContainer.innerHTML = '';
+
+            const filteredBars = barsData.filter(bar => {
+                const isVisited = !!visitedBars[bar.id];
+                if (currentFilter === 'visited') return isVisited;
+                if (currentFilter === 'unvisited') return !isVisited;
+                return true;
+            });
+
+            if (filteredBars.length === 0) {
+                listContainer.innerHTML = `
+                    <div class="text-center py-8 text-slate-500 text-sm">
+                        Keine Bars in dieser Kategorie gefunden.
+                    </div>`;
+                return;
+            }
+
+            filteredBars.forEach(bar => {
+                const isVisited = !!visitedBars[bar.id];
+                const visitDate = visitedBars[bar.id] ? new Date(visitedBars[bar.id]).toLocaleDateString('de-CH') : '';
+
+                const card = document.createElement('div');
+                card.id = `bar-card-${bar.id}`;
+                card.className = `p-3 rounded-xl transition cursor-pointer flex items-start justify-between group hover:bg-slate-700/50 border border-transparent hover:border-slate-600/50`;
+                
+                card.innerHTML = `
+                    <div class="flex-1 pr-2" onclick="focusBar(${bar.id})">
+                        <div class="flex items-center space-x-2">
+                            <h4 class="font-semibold text-sm text-slate-200 group-hover:text-amber-400 transition">${bar.name}</h4>
+                            <span class="text-[10px] px-2 py-0.5 rounded-full bg-slate-700 text-slate-300">${bar.category}</span>
+                        </div>
+                        <p class="text-xs text-slate-400 mt-1">${bar.address}</p>
+                        ${isVisited ? `
+                            <p class="text-[11px] text-emerald-400 mt-1 flex items-center font-medium">
+                                <i class="fa-solid fa-calendar-check mr-1 text-[10px]"></i> Besucht am ${visitDate}
+                            </p>
+                        ` : ''}
+                    </div>
+                    <button onclick="toggleVisitStatus(${bar.id})" class="p-2 rounded-lg text-xs transition shrink-0 ${
+                        isVisited 
+                        ? 'text-emerald-400 bg-emerald-950/40 hover:bg-emerald-900/50 border border-emerald-800/50' 
+                        : 'text-slate-400 bg-slate-700/50 hover:text-slate-200 hover:bg-slate-600'
+                    }" title="${isVisited ? 'Als nicht besucht markieren' : 'Als besucht markieren'}">
+                        <i class="fa-solid ${isVisited ? 'fa-check-circle text-base' : 'fa-circle text-base'}"></i>
+                    </button>
+                `;
+
+                listContainer.appendChild(card);
+            });
+        }
+
+        // Focus bar on map when clicked in sidebar
+        window.focusBar = function(barId) {
+            const bar = barsData.find(b => b.id === barId);
+            if (bar && map) {
+                map.flyTo([bar.lat, bar.lng], 17, { duration: 1 });
+                markers[barId].openPopup();
+                highlightListItem(barId);
+            }
+        };
+
+        // Highlight list item corresponding to selected bar
+        function highlightListItem(barId) {
+            document.querySelectorAll('#bar-list > div').forEach(el => {
+                el.classList.remove('bg-slate-700/70', 'border-amber-500/50');
+            });
+            const card = document.getElementById(`bar-card-${barId}`);
+            if (card) {
+                card.classList.add('bg-slate-700/70', 'border-amber-500/50');
+                card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+        }
+
+        // Random Bar Logic
+        function proposeRandomBar() {
+            // Prefer unvisited bars first
+            const unvisited = barsData.filter(b => !visitedBars[b.id]);
+            const pool = unvisited.length > 0 ? unvisited : barsData;
+
+            const randomIndex = Math.floor(Math.random() * pool.length);
+            const selectedBar = pool[randomIndex];
+
+            selectedRandomBarId = selectedBar.id;
+
+            // Update Modal UI
+            document.getElementById('modal-bar-name').innerText = selectedBar.name;
+            document.getElementById('modal-bar-desc').innerText = `${selectedBar.category} • ${selectedBar.address}`;
+
+            // Show Modal
+            const modal = document.getElementById('random-modal');
+            const modalCard = document.getElementById('modal-card');
+            modal.classList.remove('hidden');
+            setTimeout(() => {
+                modalCard.classList.remove('scale-95', 'opacity-0');
+                modalCard.classList.add('scale-100', 'opacity-100');
+            }, 10);
+        }
+
+        function closeModal() {
+            const modal = document.getElementById('random-modal');
+            const modalCard = document.getElementById('modal-card');
+            modalCard.classList.remove('scale-100', 'opacity-100');
+            modalCard.classList.add('scale-95', 'opacity-0');
+            setTimeout(() => {
+                modal.classList.add('hidden');
+            }, 200);
+        }
+
+        // Set up Event Listeners
+        function setupEventListeners() {
+            // Random Button
+            document.getElementById('random-btn').addEventListener('click', proposeRandomBar);
+
+            // Modal Buttons
+            document.getElementById('modal-close-btn').addEventListener('click', closeModal);
+            document.getElementById('modal-select-btn').addEventListener('click', () => {
+                closeModal();
+                if (selectedRandomBarId) {
+                    focusBar(selectedRandomBarId);
+                }
+            });
+
+            // Filter Tabs
+            const filterAll = document.getElementById('filter-all');
+            const filterVisited = document.getElementById('filter-visited');
+            const filterUnvisited = document.getElementById('filter-unvisited');
+
+            function setActiveFilterTab(activeBtn) {
+                [filterAll, filterVisited, filterUnvisited].forEach(btn => {
+                    btn.classList.remove('border-amber-500', 'text-amber-400');
+                    btn.classList.add('border-transparent', 'text-slate-400');
+                });
+                activeBtn.classList.remove('border-transparent', 'text-slate-400');
+                activeBtn.classList.add('border-amber-500', 'text-amber-400');
+            }
+
+            filterAll.addEventListener('click', () => {
+                currentFilter = 'all';
+                setActiveFilterTab(filterAll);
+                renderBarList();
+            });
+
+            filterVisited.addEventListener('click', () => {
+                currentFilter = 'visited';
+                setActiveFilterTab(filterVisited);
+                renderBarList();
+            });
+
+            filterUnvisited.addEventListener('click', () => {
+                currentFilter = 'unvisited';
+                setActiveFilterTab(filterUnvisited);
+                renderBarList();
+            });
+        }
+    </script>
+</body>
+</html>
